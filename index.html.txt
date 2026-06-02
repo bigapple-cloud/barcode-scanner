@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>バーコードスキャナー（ZXing版）</title>
+
+  <!-- ZXing ライブラリ -->
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+
+  <style>
+    body { padding: 20px; font-family: Arial; font-size: 32px; }
+    h1 { font-size: 44px; margin-bottom: 20px; }
+    video { width: 100%; border: 2px solid #333; }
+    button { padding: 20px 35px; font-size: 32px; margin: 10px 0; }
+    #confirmation { display:none; background:#e8f5e9; padding:30px; margin-top:20px; }
+  </style>
+</head>
+
+<body>
+  <h1>バーコードスキャナー（ZXing）</h1>
+
+  <video id="video" autoplay playsinline></video>
+  <button id="startBtn">カメラ起動</button>
+  <button id="stopBtn" style="display:none;">カメラ停止</button>
+
+  <div id="confirmation">
+    <h3>読み取り結果</h3>
+    <p>バーコード: <strong id="barcode"></strong></p>
+    <p>品名: <strong id="productName">取得中...</strong></p>
+    <label>数量: <input type="number" id="quantity" value="1" style="font-size:32px; width:120px;"></label>
+    <div>
+      <button onclick="register()">登録</button>
+      <button onclick="cancel()">キャンセル</button>
+    </div>
+  </div>
+
+  <div id="result"></div>
+
+  <script>
+    let codeReader = null;
+    let stream = null;
+    let lastBarcode = "";
+
+    document.getElementById("startBtn").addEventListener("click", async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" }
+        });
+
+        const video = document.getElementById("video");
+        video.srcObject = stream;
+
+        document.getElementById("startBtn").style.display = "none";
+        document.getElementById("stopBtn").style.display = "inline-block";
+
+        codeReader = new ZXing.BrowserMultiFormatReader();
+
+        codeReader.decodeFromVideoDevice(null, "video", (result, err) => {
+          if (result) {
+            onScan(result.text);
+          }
+        });
+
+      } catch (e) {
+        alert("カメラエラー: " + e);
+      }
+    });
+
+    document.getElementById("stopBtn").addEventListener("click", () => {
+      stopCamera();
+    });
+
+    function stopCamera() {
+      if (codeReader) codeReader.reset();
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      document.getElementById("startBtn").style.display = "inline-block";
+      document.getElementById("stopBtn").style.display = "none";
+    }
+
+    function onScan(barcode) {
+      lastBarcode = barcode;
+      document.getElementById("barcode").textContent = barcode;
+      document.getElementById("confirmation").style.display = "block";
+      document.getElementById("productName").textContent = "取得中...";
+
+      google.script.run
+        .withSuccessHandler(name => {
+          document.getElementById("productName").textContent = name;
+        })
+        .withFailureHandler(() => {
+          document.getElementById("productName").textContent = "エラー";
+        })
+        .getProductName(barcode);
+
+      stopCamera();
+    }
+
+    function register() {
+      const qty = parseInt(document.getElementById("quantity").value);
+      if (isNaN(qty)) {
+        alert("数量を入力してください");
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(() => {
+          document.getElementById("result").textContent = "登録完了！";
+          document.getElementById("confirmation").style.display = "none";
+        })
+        .withFailureHandler(err => {
+          alert("登録エラー: " + err);
+        })
+        .addBarcodeWithQuantity(lastBarcode, qty);
+    }
+
+    function cancel() {
+      document.getElementById("confirmation").style.display = "none";
+      document.getElementById("result").textContent = "";
+    }
+  </script>
+</body>
+</html>
